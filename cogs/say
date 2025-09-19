@@ -1,0 +1,94 @@
+from discord.ext import commands
+import discord
+import re
+
+class Say(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.group(invoke_without_command=True)
+    async def say(self, ctx, *args):
+        """
+        基本 say 功能：!say [頻道ID/連結...] [訊息內容]
+        """
+        # 同前：解析頻道與訊息
+        if len(args) < 2:
+            return await ctx.send("❌ 語法：!say [頻道ID/連結...] [內容]")
+
+        channel_refs = []
+        message_parts = []
+        for arg in args:
+            if re.search(r"\d{17,19}", arg):
+                channel_refs.append(arg)
+            else:
+                message_parts.append(arg)
+
+        message = " ".join(message_parts)
+        channel_ids = [
+            int(re.search(r"\d{17,19}", ref).group()) 
+            for ref in channel_refs 
+            if re.search(r"\d{17,19}", ref)
+        ]
+
+        if not channel_ids:
+            return await ctx.send("❌ 無法解析任何頻道 ID。")
+
+        success, failed = [], []
+        for cid in channel_ids:
+            ch = self.bot.get_channel(cid)
+            if not isinstance(ch, discord.TextChannel):
+                failed.append(str(cid))
+                continue
+            try:
+                await ch.send(message)
+                success.append(ch.mention)
+            except discord.Forbidden:
+                failed.append(str(cid))
+
+        report = ""
+        if success:
+            report += f"✅ 已發送至：{'、'.join(success)}\n"
+        if failed:
+            report += f"⚠️ 發送失敗頻道 ID：{', '.join(failed)}"
+        await ctx.send(report or "⚠️ 沒有發送成功的頻道。")
+
+    @say.command(name="edit")
+    async def say_edit(self, ctx, message_link: str, *, new_content: str):
+        """
+        編輯 say 指令發出的訊息：!say edit [訊息連結] [新內容]
+        """
+        # 解析 message link: /channels/伺服器ID/頻道ID/訊息ID
+        m = re.search(r"channels/\d+/(\d+)/(\d+)", message_link)
+        if not m:
+            return await ctx.send("❌ 無法解析訊息連結，請確認格式。")
+
+        channel_id = int(m.group(1))
+        message_id = int(m.group(2))
+        channel = self.bot.get_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel):
+            return await ctx.send("❌ 找不到該文字頻道。")
+
+        try:
+            msg = await channel.fetch_message(message_id)
+        except discord.NotFound:
+            return await ctx.send("❌ 找不到該訊息。")
+        except discord.Forbidden:
+            return await ctx.send("❌ 無權限讀取該訊息。")
+        except Exception as e:
+            return await ctx.send(f"⚠️ 讀取訊息失敗：{e}")
+
+        # 確保這是機器人自己發的訊息
+        if msg.author.id != self.bot.user.id:
+            return await ctx.send("❌ 只能編輯機器人自己發出的訊息。")
+
+        # 執行編輯
+        try:
+            await msg.edit(content=new_content)
+            await ctx.send(f"✅ 已成功編輯訊息：{msg.jump_url}")
+        except discord.Forbidden:
+            await ctx.send("❌ 機器人無權限編輯該訊息。")
+        except Exception as e:
+            await ctx.send(f"⚠️ 編輯失敗：{e}")
+
+async def setup(bot):
+    await bot.add_cog(Say(bot))

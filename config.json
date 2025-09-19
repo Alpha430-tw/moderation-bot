@@ -1,0 +1,9 @@
+import os
+# ... 其他 import
+# token 從環境變數讀取
+TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("請設定 BOT_TOKEN 環境變數！")
+
+# 原本的 start 改成使用 TOKEN
+await bot.start(TOKEN)
